@@ -6,11 +6,6 @@
 # Bootstrap a minimal Flask-based Quora-style starter.
 # The app stores posts in a JSON file and exposes them at root-level paths
 # such as http://localhost:5000/what-year-did-canada-become-a-country.
-#
-# Flask docs (up to date): https://flask.palletsprojects.com/en/latest/
-#
-# This script generates app.py, templates/index.html, templates/post.html,
-# requirements.txt, and a starter README.
 
 print_help() {
   cat <<'EOF'
@@ -28,17 +23,6 @@ After initialization:
   source venv/bin/activate
   pip install -r requirements.txt
   python app.py
-
-The app uses root-level slugs for posts: /<slug>
-Example: http://localhost:5000/how-old-is-canada
-
-Flask documentation: https://flask.palletsprojects.com/en/latest/
-
-Kill Localhost Processes:
-
-1. lsof -i <PID>
-2. kill -9 <PID>
-
 EOF
 }
 
@@ -48,287 +32,7 @@ init_project() {
   cd "$target_dir"
 
   cat > requirements.txt <<'EOF'
-# Flask>=2.3.0
-Flask==3.0.3
-Werkzeug==3.0.1
-Jinja2==3.1.4
-MarkupSafe==2.1.5
-itsdangerous==2.2.0
-click==8.1.7
-EOF
-
-cat > cia.py <<'EOF'
-import os
-import zipfile
-from flask import Flask, render_template, request, redirect, url_for, abort, send_from_directory
-from werkzeug.utils import secure_filename
-
-app = Flask(__name__)
-
-# Configuration
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'zip', '7z', 'rar', 'tar', 'gz'} # Add extensions as needed
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # Limit uploads to 500MB
-
-# Ensure upload directory exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def get_file_metadata(filepath):
-    """
-    Extracts metadata without allowing file download.
-    For ZIPs, it counts internal files. For others, returns basic OS stats.
-    """
-    stats = os.stat(filepath)
-    size_mb = round(stats.st_size / (1024 * 1024), 2)
-    file_type = "Archive"
-    internal_count = "N/A"
-
-    # Try to read ZIP metadata specifically
-    if filepath.lower().endswith('.zip'):
-        try:
-            with zipfile.ZipFile(filepath, 'r') as z:
-                internal_count = len(z.namelist())
-                file_type = "ZIP Archive"
-        except zipfile.BadZipFile:
-            file_type = "Corrupt ZIP"
-    
-    return {
-        "size": f"{size_mb} MB",
-        "type": file_type,
-        "contents": internal_count,
-        "modified": stats.st_mtime
-    }
-
-@app.route('/')
-def index():
-    files = []
-    # List all files in the upload folder
-    for filename in os.listdir(app.config['UPLOAD_FOLDER']):
-        if allowed_file(filename):
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            meta = get_file_metadata(filepath)
-            files.append({
-                "name": filename,
-                "meta": meta
-            })
-    # Sort by name
-    files.sort(key=lambda x: x['name'])
-    return render_template('index.html', files=files)
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return redirect(request.url)
-    
-    file = request.files['file']
-    
-    if file.filename == '':
-        return redirect(request.url)
-    
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        return redirect(url_for('index'))
-    
-    return "Invalid file type", 400
-
-# SECURITY CRITICAL: Explicitly block any attempt to download files
-@app.route('/uploads/<path:filename>')
-def blocked_download(filename):
-    """
-    This route catches any direct access attempts to the uploads folder
-    and returns a 403 Forbidden error.
-    """
-    abort(403, description="Downloads are disabled for this archive.")
-
-# Optional: Block directory listing via web server config is preferred, 
-# but this adds a layer of safety within Flask.
-@app.route('/uploads/')
-def blocked_directory():
-    abort(403, description="Directory listing is disabled.")
-
-if __name__ == '__main__':
-    # app.run(debug=True, port=5000)
-    # not sure if i need that since its already added above...?
-EOF
-
-cat > templates/cia.html <<'HTML'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>canadian internet archive</title>
-    <style>
-        :root {
-            --bg-color: #1a1a2e;
-            --card-bg: #16213e;
-            --accent: #0f3460;
-            --text: #e94560;
-            --text-light: #f1f1f1;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-light);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        h1 { color: var(--text); margin-bottom: 30px; }
-
-        .upload-container {
-            background: var(--card-bg);
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            text-align: center;
-            width: 100%;
-            max-width: 600px;
-            margin-bottom: 40px;
-            border: 2px dashed var(--accent);
-        }
-
-        input[type="file"] {
-            display: none;
-        }
-
-        .custom-file-upload {
-            border: 1px solid var(--text);
-            background: var(--accent);
-            color: white;
-            display: inline-block;
-            padding: 10px 20px;
-            cursor: pointer;
-            border-radius: 5px;
-            transition: background 0.3s;
-        }
-
-        .custom-file-upload:hover { background: var(--text); }
-
-        button {
-            background: var(--text);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-left: 10px;
-        }
-
-        button:hover { opacity: 0.9; }
-
-        .file-list {
-            width: 100%;
-            max-width: 900px;
-            border-collapse: collapse;
-            background: var(--card-bg);
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-        }
-
-        .file-list th, .file-list td {
-            padding: 15px;
-            text-align: left;
-            border-bottom: 1px solid var(--accent);
-        }
-
-        .file-list th {
-            background-color: var(--accent);
-            color: var(--text);
-            text-transform: uppercase;
-            font-size: 0.85rem;
-            letter-spacing: 1px;
-        }
-
-        .file-list tr:hover { background-color: rgba(255,255,255,0.05); }
-
-        .badge {
-            background: var(--accent);
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.8rem;
-            color: #fff;
-        }
-
-        .empty-state {
-            text-align: center;
-            color: #888;
-            padding: 40px;
-        }
-    </style>
-</head>
-<body>
-
-    <h1>🎮 ROM Archive Manager</h1>
-
-    <!-- Upload Section -->
-    <div class="upload-container">
-        <h3>Upload New Archive</h3>
-        <p style="font-size: 0.9rem; color: #aaa;">Supported: .zip, .7z, .rar (Downloads Disabled)</p>
-        <form action="/upload" method="post" enctype="multipart/form-data">
-            <label for="file-upload" class="custom-file-upload">
-                📂 Choose File
-            </label>
-            <input id="file-upload" name="file" type="file" required onchange="document.getElementById('file-name').innerText = this.files[0].name">
-            <span id="file-name" style="margin-left: 15px; font-style: italic;"></span>
-            <br><br>
-            <button type="submit">Upload Archive</button>
-        </form>
-    </div>
-
-    <!-- File List Section -->
-    <table class="file-list">
-        <thead>
-            <tr>
-                <th>Filename</th>
-                <th>Type</th>
-                <th>Size</th>
-                <th>Internal Files</th>
-                <th>Last Modified</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% if files %}
-                {% for file in files %}
-                <tr>
-                    <td><strong>{{ file.name }}</strong></td>
-                    <td><span class="badge">{{ file.meta.type }}</span></td>
-                    <td>{{ file.meta.size }}</td>
-                    <td>{{ file.meta.contents }}</td>
-                    <td>{{ file.meta.modified | int | timestamp_to_date }}</td>
-                </tr>
-                {% endfor %}
-            {% else %}
-                <tr>
-                    <td colspan="5" class="empty-state">No archives uploaded yet.</td>
-                </tr>
-            {% endif %}
-        </tbody>
-    </table>
-
-    <script>
-        // Simple client-side validation feedback
-        document.querySelector('form').onsubmit = function() {
-            const btn = document.querySelector('button[type="submit"]');
-            btn.innerText = "Uploading...";
-            btn.disabled = true;
-        };
-    </script>
-</body>
-</html>
+Flask>=2.3.0
 EOF
 
   cat > app.py <<'PY'
@@ -399,10 +103,6 @@ def show_post(slug: str):
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
-    # cia date & time functionality
-    @app.template_filter('timestamp_to_date')
-      def timestamp_to_date_filter(timestamp):
-        return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M')
 PY
 
   mkdir -p templates
@@ -410,320 +110,647 @@ PY
   cat > templates/index.html <<'HTML'
 <!doctype html>
 <html lang="en">
-
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AYT04 - Home</title>
+  <title>AYT04 - Q&A Community</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #121417;
-      --card: #16181b;
-      --muted: #98a0a6;
-      --accent: #e56b6b;
-      --border: #232528;
-      --radius: 10px;
-      --container: 760px;
-      /* narrower centered content */
-      --text: #e6eef3;
-      --shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-      --small-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-      --gap: 18px;
+      --bg-dark: #09090b;
+      --bg-gradient: linear-gradient(135deg, #09090b 0%, #18181b 100%);
+      --card-bg: rgba(24, 24, 27, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --accent-glow: rgba(59, 130, 246, 0.4);
+      --danger: #ef4444;
+      --radius: 16px;
+      --shadow: 0 10px 40px -10px rgba(0,0,0,0.5);
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+      --input-bg: rgba(0, 0, 0, 0.2);
+      --list-hover-bg: rgba(255, 255, 255, 0.05);
+      --list-hover-border: rgba(255, 255, 255, 0.15);
+      --list-bg: rgba(255, 255, 255, 0.02);
     }
-
-    * {
-      box-sizing: border-box
+    
+    [data-theme="light"] {
+      --bg-dark: #f8fafc;
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      --card-bg: rgba(255, 255, 255, 0.7);
+      --card-border: rgba(0, 0, 0, 0.1);
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-glow: rgba(37, 99, 235, 0.3);
+      --shadow: 0 10px 40px -10px rgba(0,0,0,0.1);
+      --input-bg: rgba(255, 255, 255, 0.8);
+      --list-hover-bg: rgba(0, 0, 0, 0.03);
+      --list-hover-border: rgba(0, 0, 0, 0.15);
+      --list-bg: rgba(255, 255, 255, 0.5);
     }
-
-    html,
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
     body {
-      height: 100%
-    }
-
-    body {
-      margin: 0;
-      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-      background: var(--bg);
-      color: var(--text);
-      -webkit-font-smoothing: antialiased;
-      line-height: 1.5;
+      font-family: var(--font);
+      background: var(--bg-dark);
+      background-image: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
       display: flex;
-      align-items: flex-start;
       justify-content: center;
-      padding: 40px 16px;
+      padding: 40px 20px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+    
+    .layout-wrapper {
+      display: flex;
+      gap: 32px;
+      max-width: 1000px;
+      width: 100%;
+      align-items: flex-start;
+      position: relative;
     }
 
-    /* center card that holds everything */
-    .center-card {
-      width: 100%;
-      max-width: var(--container);
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.01), transparent);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 22px;
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    
+    .glass-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 32px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       box-shadow: var(--shadow);
+      transition: background 0.3s ease, border-color 0.3s ease;
     }
-
+    
     h1 {
-      margin: 0 0 14px 0;
-      font-family: Georgia, "Times New Roman", serif;
-      font-size: 28px;
-      font-weight: 600;
-      color: var(--text);
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      background: linear-gradient(to right, var(--text-main), var(--text-muted));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
-
-    .error {
-      color: var(--accent);
-      margin: 10px 0;
-      font-weight: 600
+    
+    h2, h3 { font-weight: 600; color: var(--text-main); transition: color 0.3s ease; }
+    h2 { font-size: 1.25rem; margin-bottom: 16px; }
+    
+    .error-msg {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--danger);
+      padding: 12px 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      font-size: 0.9rem;
+      font-weight: 500;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-
-    form {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
-      box-shadow: var(--small-shadow);
-      display: grid;
-      gap: 12px;
-      margin-bottom: 18px;
+    
+    form { display: flex; flex-direction: column; gap: 16px; }
+    
+    label {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
-
-    form label {
-      display: block;
-      font-size: 13px;
-      color: var(--muted);
-      font-weight: 600
-    }
-
-    form input,
-    form textarea {
+    
+    input, textarea {
       width: 100%;
-      padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid #2b2e31;
-      background: #0f1113;
-      color: var(--text);
-      font-size: 15px;
+      background: var(--input-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+    }
+    
+    input:focus, textarea:focus {
       outline: none;
-      box-shadow: var(--small-shadow);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
     }
-
-    form textarea {
-      min-height: 120px;
-      resize: vertical;
-      line-height: 1.6
-    }
-
-    form input::placeholder,
-    form textarea::placeholder {
-      color: #5b6166
-    }
-
-    form button[type="submit"] {
-      justify-self: start;
+    
+    textarea { min-height: 120px; resize: vertical; }
+    
+    button[type="submit"] {
       background: var(--accent);
-      color: #111;
+      color: white;
       border: none;
-      padding: 9px 14px;
-      border-radius: 8px;
-      font-weight: 700;
+      padding: 12px 24px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.95rem;
       cursor: pointer;
-      box-shadow: 0 6px 12px rgba(229, 107, 107, 0.12);
+      transition: all 0.2s ease;
+      align-self: flex-start;
+      box-shadow: 0 4px 12px var(--accent-glow);
     }
-
-    .post-list h2 {
-      font-size: 16px;
-      color: var(--muted);
-      margin: 6px 0 10px;
-      font-weight: 700;
-      letter-spacing: 0.3px;
+    
+    button[type="submit"]:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px var(--accent-glow);
     }
-
+    
+    button[type="submit"]:active { transform: translateY(1px); }
+    
     .post-list ul {
       list-style: none;
-      padding: 0;
-      margin: 0;
-      display: grid;
-      gap: 12px
-    }
-
-    .post-list li {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 14px;
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-    }
-
-    .post-list a {
-      color: var(--text);
-      font-family: Georgia, "Times New Roman", serif;
-      font-size: 16px;
-      font-weight: 600;
-      text-decoration: none;
-    }
-
-    .post-list a:hover {
-      color: var(--accent);
-      text-decoration: underline
-    }
-
-    @media (max-width:520px) {
-      body {
-        padding: 20px 12px
-      }
-
-      .center-card {
-        padding: 16px
-      }
-
-      h1 {
-        font-size: 22px
-      }
-    }
-
-    .rules-sidebar {
-      width: 300px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px;
-      box-shadow: var(--small-shadow);
       display: flex;
       flex-direction: column;
       gap: 12px;
-      font-size: 14px;
+    }
+    
+    .post-list li a {
+      display: block;
+      padding: 16px 20px;
+      background: var(--list-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      color: var(--text-main);
+      text-decoration: none;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    
+    .post-list li a:hover {
+      background: var(--list-hover-bg);
+      border-color: var(--list-hover-border);
+      transform: translateX(4px);
+    }
+    
+    .sidebar { width: 320px; flex-shrink: 0; }
+    .sidebar .glass-card { padding: 24px; }
+    .sidebar h2 { margin-bottom: 20px; font-size: 1.1rem; }
+    
+    .rule-group { margin-bottom: 20px; }
+    .rule-group:last-child { margin-bottom: 0; }
+    .rule-group h3 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    
+    .rule-group ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .rule-group li {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      position: relative;
+      padding-left: 16px;
+    }
+    
+    .rule-group li::before {
+      content: "•";
+      color: var(--accent);
+      position: absolute;
+      left: 0;
+      font-weight: bold;
+    }
+    
+    .rule-group li strong { color: var(--text-main); }
+    
+    .sidebar-footer {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-align: center;
     }
 
-    .rules-sidebar h2 {
-      margin: 0;
-      font-size: 15px;
-      color: var(--muted);
-      letter-spacing: 0.2px;
-      font-weight: 700;
+    /* Theme Toggle Button */
+    .theme-toggle {
+      position: absolute;
+      top: 0;
+      right: 0;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 100;
+      transition: all 0.2s ease;
+      box-shadow: var(--shadow);
     }
-
-    .rule-group-title {
-      margin: 0;
-      font-size: 13px;
-      color: var(--text);
-      font-weight: 700;
-      margin-top: 6px;
+    
+    .theme-toggle:hover {
+      transform: translateY(-2px);
+      background: var(--list-hover-bg);
     }
-
-    .rules-list {
-      margin: 6px 0 0 18px;
-      padding: 0;
-      color: var(--muted);
+    
+    .sun-icon, .moon-icon { 
+      width: 20px; 
+      height: 20px; 
+      position: absolute; 
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
     }
-
-    .rules-list li {
-      margin: 8px 0;
-      line-height: 1.35;
-    }
-
-    .rules-list strong {
-      color: var(--text);
-      font-weight: 700;
-    }
-
-    .rules-footer {
-      margin-top: 6px;
-      padding-top: 8px;
-      border-top: 1px solid rgba(255, 255, 255, 0.02);
-    }
-
-    .rules-footer .muted {
-      margin: 0;
-      color: var(--muted);
-      font-size: 13px
+    
+    [data-theme="light"] .sun-icon { opacity: 0; transform: rotate(-90deg) scale(0.5); }
+    [data-theme="light"] .moon-icon { opacity: 1; transform: rotate(0) scale(1); }
+    [data-theme="dark"] .sun-icon, :root:not([data-theme="light"]) .sun-icon { opacity: 1; transform: rotate(0) scale(1); }
+    [data-theme="dark"] .moon-icon, :root:not([data-theme="light"]) .moon-icon { opacity: 0; transform: rotate(90deg) scale(0.5); }
+    
+    @media (max-width: 768px) {
+      .layout-wrapper { flex-direction: column; padding-top: 60px; }
+      .sidebar { width: 100%; }
+      body { padding: 20px 16px; }
+      .theme-toggle { top: -50px; right: 0; }
     }
   </style>
+  <script>
+    // Immediate script to prevent FOUC (Flash of Unstyled Content)
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  </script>
 </head>
-
 <body>
-  <h1>The AYT04  Q&amp;</h1>
-  {% if error %}
-  <p class="error">{{ error }}</p>
-  {% endif %}
-  <form method="post" autocomplete="off">
-    <label>
-      Title
-      <input name="title" required />
-    </label>
-    <label>
-      Optional slug
-      <input name="slug" placeholder="what-year-did-canada-become-a-country" />
-    </label>
-    <label>
-      Content
-      <textarea name="content" required></textarea>
-    </label>
-    <button type="submit">Post</button>
-  </form>
+  <div class="layout-wrapper">
+    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
+      <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5"></circle>
+        <line x1="12" y1="1" x2="12" y2="3"></line>
+        <line x1="12" y1="21" x2="12" y2="23"></line>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+        <line x1="1" y1="12" x2="3" y2="12"></line>
+        <line x1="21" y1="12" x2="23" y2="12"></line>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      </svg>
+      <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+    </button>
+    
+    <main class="main-content">
+      <section class="glass-card">
+        <h1>AYT04 Q&amp;A</h1>
+        <p style="color: var(--text-muted); margin-bottom: 24px; font-size: 0.95rem;">Ask a question or share your thoughts.</p>
+        
+        {% if error %}
+        <div class="error-msg">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          {{ error }}
+        </div>
+        {% endif %}
+        
+        <form method="post" autocomplete="off">
+          <label>
+            Title
+            <input name="title" required placeholder="What's on your mind?" />
+          </label>
+          <label>
+            Optional slug
+            <input name="slug" placeholder="e.g., custom-url-slug" />
+          </label>
+          <label>
+            Content
+            <textarea name="content" required placeholder="Provide some details..."></textarea>
+          </label>
+          <button type="submit">Publish Post</button>
+        </form>
+      </section>
 
-  <section class="post-list">
-    <h2>Existing posts</h2>
-    <ul>
-      {% for slug, post in posts.items() %}
-      <li><a href="/{{ slug }}">{{ post.title }}</a></li>
-      {% else %}
-      <li>No posts yet.</li>
-      {% endfor %}
-    </ul>
-  </section>
+      <section class="glass-card post-list">
+        <h2>Recent Discussions</h2>
+        <ul>
+          {% for slug, post in posts.items() %}
+          <li><a href="/{{ slug }}">{{ post.title }}</a></li>
+          {% else %}
+          <li style="color: var(--text-muted); font-size: 0.95rem; text-align: center; padding: 20px;">No posts yet. Be the first to start a discussion!</li>
+          {% endfor %}
+        </ul>
+      </section>
+    </main>
+
+    <aside class="sidebar">
+      <div class="glass-card">
+        <h2>Community Guidelines</h2>
+        
+        <div class="rule-group">
+          <h3>Be Respectful</h3>
+          <ul>
+            <li><strong>No harassment:</strong> Personal attacks and threats are strictly forbidden.</li>
+            <li><strong>Keep it civil:</strong> Disagree respectfully.</li>
+          </ul>
+        </div>
+        
+        <div class="rule-group">
+          <h3>Content</h3>
+          <ul>
+            <li><strong>No spam:</strong> Self-promotion and referral links are not allowed.</li>
+            <li><strong>Stay on-topic:</strong> Keep discussions relevant.</li>
+          </ul>
+        </div>
+        
+        <div class="sidebar-footer">
+          By participating you agree to follow these rules. Repeated violations may result in moderation action.
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const toggleBtn = document.getElementById('theme-toggle');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+      });
+    }
+  </script>
 </body>
-<aside class="rules-sidebar" aria-labelledby="rules-title">
-  <h2 id="rules-title">Community Rules</h2>
-
-  <section class="rule-group">
-    <h3 class="rule-group-title">Be Respectful</h3>
-    <ol class="rules-list">
-      <li><strong>No harassment:</strong> Personal attacks, hate speech, and threats are not allowed.</li>
-      <li><strong>Keep it civil:</strong> Disagree without insulting others.</li>
-    </ol>
-  </section>
-
-  <section class="rule-group">
-    <h3 class="rule-group-title">Content</h3>
-    <ol class="rules-list">
-      <li><strong>No spam:</strong> Repetitive posts, self-promotion, or referral links are forbidden.</li>
-      <li><strong>Stay on-topic:</strong> Posts must relate to the community’s focus.</li>
-      <li><strong>No illegal content:</strong> Requests for or distribution of illegal materials are prohibited.</li>
-    </ol>
-  </section>
-
-  <section class="rule-group">
-    <h3 class="rule-group-title">Moderation</h3>
-    <ol class="rules-list">
-      <li><strong>Follow moderator instructions:</strong> Once you post something, it's permanant, however the admins can remove your post if it deems to violate our rules.</li>
-      <li><strong>Report rule-breaking content:</strong> Due to the nature of there not being a account creation, we rely heavily on our team of mods, which is just me and my close friends, we wil remove anythng that deems unrelated to our core focus of our projects.</li>
-    </ol>
-  </section>
-</aside>
-
 </html>
 HTML
 
   cat > templates/post.html <<'HTML'
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{ post.title }}</title>
-    <style>
-      :root{ --bg:#0f1112; --card:#151618; --muted:#a8b0b6; --accent:#e33b3b; --link:#9fd3ff; --max-width:760px; --radius:10px; --gap:18px; --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; } html,body{ height:100%; margin:0; background:linear-gradient(180deg,var(--bg) 0%, #0b0c0d 100%); color:#e6eef3; font-family:var(--font-sans); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; line-height:1.5; } /* page wrapper centers content vertically & horizontally */ body{ display:flex; align-items:center; justify-content:center; padding:40px 20px; } /* simple back link styled like a pill button */ a[href="/"]{ position:fixed; left:20px; top:20px; text-decoration:none; color:var(--link); background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:999px; font-weight:600; box-shadow:0 2px 10px rgba(0,0,0,0.6); transition:transform .12s ease, background .12s ease; } a[href="/"]:hover{ transform:translateY(-2px); background:rgba(159,211,255,0.06) } /* article card */ article{ width:100%; max-width:var(--max-width); background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent); border:1px solid rgba(255,255,255,0.04); border-radius:var(--radius); padding:28px; box-shadow: 0 8px 30px rgba(2,6,10,0.7), inset 0 1px 0 rgba(255,255,255,0.02); } /* title */ article h1{ margin:0 0 12px 0; font-size:clamp(20px, 3.8vw, 32px); color:#f7fbff; letter-spacing:-0.2px; } /* content paragraph */ article p{ margin:0; color:var(--muted); font-size:16px; white-space:pre-wrap; /* respects newlines in post.content */ } /* small responsive adjustments */ @media (max-width:520px){ body{ padding:28px 14px; } article{ padding:20px; } a[href="/"]{ left:12px; top:12px; padding:7px 10px; font-size:14px; } }
-    </style>
-  </head>
-  <body>
-    <a href="/">← Back</a>
-    <article>
-      <h1>{{ post.title }}</h1>
-      <p>{{ post.content }}</p>
-    </article>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ post.title }} - AYT04</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #09090b;
+      --bg-gradient: linear-gradient(135deg, #09090b 0%, #18181b 100%);
+      --card-bg: rgba(24, 24, 27, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --radius: 16px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+      --list-hover-bg: rgba(255, 255, 255, 0.05);
+      --shadow: 0 20px 40px -20px rgba(0,0,0,0.7);
+    }
+    
+    [data-theme="light"] {
+      --bg-dark: #f8fafc;
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      --card-bg: rgba(255, 255, 255, 0.7);
+      --card-border: rgba(0, 0, 0, 0.1);
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --list-hover-bg: rgba(0, 0, 0, 0.03);
+      --shadow: 0 20px 40px -20px rgba(0,0,0,0.1);
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: var(--font);
+      background: var(--bg-dark);
+      background-image: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 60px 20px;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+    
+    .back-btn {
+      position: fixed;
+      top: 24px;
+      left: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      text-decoration: none;
+      padding: 10px 16px;
+      border-radius: 99px;
+      font-weight: 500;
+      font-size: 0.9rem;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      transition: all 0.2s ease;
+      z-index: 10;
+    }
+    
+    .back-btn:hover {
+      background: var(--list-hover-bg);
+      transform: translateY(-2px);
+    }
+
+    /* Theme Toggle Button */
+    .theme-toggle {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 100;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    
+    .theme-toggle:hover {
+      transform: translateY(-2px);
+      background: var(--list-hover-bg);
+    }
+    
+    .sun-icon, .moon-icon { 
+      width: 20px; 
+      height: 20px; 
+      position: absolute; 
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+    }
+    
+    [data-theme="light"] .sun-icon { opacity: 0; transform: rotate(-90deg) scale(0.5); }
+    [data-theme="light"] .moon-icon { opacity: 1; transform: rotate(0) scale(1); }
+    [data-theme="dark"] .sun-icon, :root:not([data-theme="light"]) .sun-icon { opacity: 1; transform: rotate(0) scale(1); }
+    [data-theme="dark"] .moon-icon, :root:not([data-theme="light"]) .moon-icon { opacity: 0; transform: rotate(90deg) scale(0.5); }
+    
+    .article-container {
+      width: 100%;
+      max-width: 760px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 48px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: var(--shadow);
+      animation: fadeUp 0.4s ease-out forwards;
+      transition: background 0.3s ease, border-color 0.3s ease;
+    }
+    
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 24px;
+      line-height: 1.2;
+      background: linear-gradient(to right, var(--text-main), var(--text-muted));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .post-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--card-border);
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+    
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      color: white;
+      font-size: 0.8rem;
+    }
+    
+    .content {
+      color: var(--text-main);
+      font-size: 1.05rem;
+      white-space: pre-wrap;
+    }
+    
+    @media (max-width: 640px) {
+      body { padding: 80px 16px 40px; }
+      .article-container { padding: 32px 24px; }
+      h1 { font-size: 2rem; }
+      .back-btn { top: 16px; left: 16px; padding: 8px 12px; }
+      .theme-toggle { top: 16px; right: 16px; width: 38px; height: 38px; }
+    }
+  </style>
+  <script>
+    // Immediate script to prevent FOUC (Flash of Unstyled Content)
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  </script>
+</head>
+<body>
+  <a href="/" class="back-btn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+    Back
+  </a>
+
+  <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
+    <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+    <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+    </svg>
+  </button>
+  
+  <main class="article-container">
+    <h1>{{ post.title }}</h1>
+    <div class="post-meta">
+      <div class="avatar">A</div>
+      <div>Posted by Anonymous</div>
+    </div>
+    <div class="content">{{ post.content }}</div>
+  </main>
+  
+  <script>
+    const toggleBtn = document.getElementById('theme-toggle');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+      });
+    }
+  </script>
+</body>
 </html>
 HTML
 
@@ -744,16 +771,14 @@ Run:
     python app.py
 
 Then visit `http://127.0.0.1:5000/`.
-
-Flask docs: https://flask.palletsprojects.com/en/latest/
 EOF
 
   echo "Project initialized in $(pwd)."
-  echo "Run: python app.py"
+  echo "Run: cd $target_dir && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && python app.py"
 }
 
 main() {
-  if [[ ${#@} -eq 0 ]]; then
+  if [[ $# -eq 0 ]]; then
     print_help
     exit 0
   fi
